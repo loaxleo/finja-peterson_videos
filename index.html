@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#CFF5E7">
+<title>&#8203;</title>
+<style>
+  :root {
+    --bg: #CFF5E7;   /* helles Mint  – dunkles Mint: #1F4D43 */
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: var(--bg); }
+  body {
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  video {
+    display: block;
+    width: 100%;
+    max-width: 700px;
+    margin: 0 auto;
+    border-radius: 14px;
+    background: #000;
+  }
+</style>
+</head>
+<body>
+
+<script>
+  // Anzahl Videos – Dateien heissen videos/1.mp4, videos/2.mp4, ...
+  const ANZAHL = 10;
+
+  for (let i = 1; i <= ANZAHL; i++) {
+    const v = document.createElement('video');
+    v.src = `videos/${i}.mp4#t=0.001`;   // #t zeigt auf iOS das erste Bild als Vorschau
+    v.controls = true;
+    v.playsInline = true;                 // nicht automatisch Vollbild auf iPhone
+    v.preload = 'metadata';               // lädt nur Vorschau, nicht das ganze Video
+    document.body.appendChild(v);
+  }
+
+  // Nur ein Video gleichzeitig
+  document.addEventListener('play', e => {
+    document.querySelectorAll('video').forEach(v => {
+      if (v !== e.target) v.pause();
+    });
+  }, true);
+</script>
+
+</body>
+</html>
