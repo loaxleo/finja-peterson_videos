@@ -72,6 +72,45 @@
     text-decoration: none;
     opacity: .6;
   }
+  /* Video auf der Seite + Vollbild-Knopf */
+  .kachel { position: relative; max-width: 700px; margin: 0 auto; width: 100%; }
+  .gross {
+    position: absolute; top: 10px; right: 10px;
+    width: 38px; height: 38px; border: 0; border-radius: 50%;
+    background: rgba(0, 0, 0, .45); color: var(--mint);
+    display: flex; align-items: center; justify-content: center;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .gross svg { width: 18px; height: 18px; }
+
+  /* Vollbild: wischen hoch/runter */
+  #vollbild { position: fixed; inset: 0; z-index: 10; background: #000; }
+  #vollbild[hidden] { display: none; }
+  #spur {
+    height: 100%; overflow-y: scroll;
+    scroll-snap-type: y mandatory; overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  #spur::-webkit-scrollbar { display: none; }
+  .folie {
+    position: relative; height: 100%;
+    scroll-snap-align: start; scroll-snap-stop: always;
+  }
+  .folie img, .folie video {
+    position: absolute; left: 0; width: 100%;
+    top: env(safe-area-inset-top);
+    height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    object-fit: contain; border-radius: 0; max-width: none; background: #000;
+  }
+  #zu {
+    position: fixed; z-index: 11;
+    top: calc(env(safe-area-inset-top) + 10px); left: 12px;
+    width: 40px; height: 40px; border: 0; border-radius: 50%;
+    background: rgba(0, 0, 0, .45); color: var(--mint);
+    display: flex; align-items: center; justify-content: center;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  #zu svg { width: 18px; height: 18px; }
 </style>
 </head>
 <body>
@@ -79,6 +118,13 @@
 <main id="v"></main>
 <p class="widmung">Videos sortieren, hinzufügen o. löschen/.</p>
 <a class="rand" href="upload.html" aria-label="Videos verwalten">+</a>
+
+<div id="vollbild" hidden>
+  <div id="spur"></div>
+  <button id="zu" aria-label="Schliessen">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+</div>
 
 <script>
   const box = document.getElementById('v');
@@ -88,23 +134,109 @@
     eintraege.forEach(e => { if (e.intersectionRatio < 0.3 && !e.target.paused) e.target.pause(); });
   }, { threshold: [0, 0.3] });
 
+  const SYMBOL_GROSS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>';
+  let liste = [];
+
   // Liste (Reihenfolge) wird automatisch von GitHub gepflegt: videos.json
   fetch('videos.json', { cache: 'no-store' })
     .then(r => r.json())
-    .then(liste => liste.forEach(name => {
-      const id = name.replace('.mp4', '');
-      const v = document.createElement('video');
-      v.src = `videos/${name}`;
-      v.poster = `posters/${id}.jpg`;   // Vorschaubild – lädt schnell
-      v.controls = true;
-      v.playsInline = true;             // nicht automatisch Vollbild auf iPhone
-      v.preload = 'none';               // Video lädt erst beim Abspielen
-      const bild = new Image();         // Seitenverhältnis schon vor dem Abspielen (aus dem Vorschaubild)
-      bild.onload = () => v.style.aspectRatio = `${bild.naturalWidth} / ${bild.naturalHeight}`;
-      bild.src = v.poster;
-      box.appendChild(v);
-      beobachter.observe(v);
-    }));
+    .then(namen => {
+      liste = namen;
+      liste.forEach((name, i) => {
+        const id = name.replace('.mp4', '');
+        const k = document.createElement('div');
+        k.className = 'kachel';
+        const v = document.createElement('video');
+        v.src = `videos/${name}`;
+        v.poster = `posters/${id}.jpg`;   // Vorschaubild – lädt schnell
+        v.controls = true;
+        v.playsInline = true;             // nicht automatisch Vollbild auf iPhone
+        v.preload = 'none';               // Video lädt erst beim Abspielen
+        v.setAttribute('controlslist', 'nofullscreen');   // Android: eigener Vollbild-Knopf statt des normalen
+        const bild = new Image();         // Seitenverhältnis schon vor dem Abspielen (aus dem Vorschaubild)
+        bild.onload = () => v.style.aspectRatio = `${bild.naturalWidth} / ${bild.naturalHeight}`;
+        bild.src = v.poster;
+        // iPhone: normales Vollbild abfangen und stattdessen das Wisch-Vollbild öffnen
+        v.addEventListener('webkitbeginfullscreen', () => {
+          const t = v.currentTime;
+          setTimeout(() => { v.webkitExitFullscreen(); oeffnen(i, t); }, 0);
+        });
+        const knopf = document.createElement('button');
+        knopf.className = 'gross';
+        knopf.setAttribute('aria-label', 'Vollbild');
+        knopf.innerHTML = SYMBOL_GROSS;
+        knopf.onclick = () => oeffnen(i, v.currentTime);
+        k.append(v, knopf);
+        box.appendChild(k);
+        beobachter.observe(v);
+      });
+    });
+
+  // ---------- Vollbild mit Wischen ----------
+  const vb = document.getElementById('vollbild');
+  const spur = document.getElementById('spur');
+  const vv = document.createElement('video');   // EIN Player, der von Folie zu Folie wandert (iPhone erlaubt dann Abspielen beim Wischen)
+  vv.controls = true;
+  vv.playsInline = true;
+  vv.setAttribute('controlslist', 'nofullscreen');
+  vv.addEventListener('webkitbeginfullscreen', () => setTimeout(() => vv.webkitExitFullscreen(), 0));
+  let aktiv = -1;
+
+  const folienBeob = new IntersectionObserver(eintraege => {
+    eintraege.forEach(e => { if (e.isIntersecting) zeige(+e.target.dataset.i); });
+  }, { root: spur, threshold: 0.6 });
+
+  function zeige(i, zeit = 0) {
+    if (i === aktiv || !liste[i]) return;
+    aktiv = i;
+    const id = liste[i].replace('.mp4', '');
+    vv.pause();
+    vv.poster = `posters/${id}.jpg`;
+    vv.src = `videos/${liste[i]}`;
+    if (zeit) vv.addEventListener('loadedmetadata', () => vv.currentTime = zeit, { once: true });
+    spur.children[i].appendChild(vv);
+    vv.play().catch(() => {});
+  }
+
+  function oeffnen(i, zeit) {
+    document.querySelectorAll('#v video').forEach(v => v.pause());
+    if (!spur.children.length) {
+      liste.forEach((name, j) => {
+        const f = document.createElement('div');
+        f.className = 'folie';
+        f.dataset.i = j;
+        const img = document.createElement('img');
+        img.src = `posters/${name.replace('.mp4', '')}.jpg`;
+        img.alt = '';
+        f.appendChild(img);
+        spur.appendChild(f);
+        folienBeob.observe(f);
+      });
+    }
+    vb.hidden = false;
+    document.body.style.overflow = 'hidden';
+    spur.scrollTop = i * spur.clientHeight;
+    aktiv = -1;
+    zeige(i, zeit);
+    if (vb.requestFullscreen) vb.requestFullscreen().catch(() => {});   // Android: auch Browserleisten ausblenden
+    history.pushState({ vollbild: true }, '');
+  }
+
+  function schliessen() {
+    if (vb.hidden) return;
+    vv.pause();
+    vb.hidden = true;
+    document.body.style.overflow = '';
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    const k = box.children[aktiv];
+    if (k) k.scrollIntoView({ block: 'center' });   // auf der Seite beim zuletzt gesehenen Video landen
+  }
+
+  document.getElementById('zu').onclick = () => history.state && history.state.vollbild ? history.back() : schliessen();
+  window.addEventListener('popstate', schliessen);   // Android-Zurück schliesst das Vollbild
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && !vb.hidden) history.state && history.state.vollbild ? history.back() : schliessen();
+  });
 
   // Nur ein Video gleichzeitig
   document.addEventListener('play', e => {
