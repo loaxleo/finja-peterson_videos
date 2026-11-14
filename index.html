@@ -4,7 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#CFF5E7">
-<title>&#8203;</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Finja">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/favicon.png">
+<title>Finja</title>
 <style>
   :root {
     --bg: #CFF5E7;   /* helles Mint  – dunkles Mint: #1F4D43 */
@@ -13,12 +20,12 @@
   html, body { background: var(--bg); }
   body {
     padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    -webkit-tap-highlight-color: transparent;
   }
   #v {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    -webkit-tap-highlight-color: transparent;
   }
   video {
     display: block;
@@ -26,7 +33,8 @@
     max-width: 700px;
     margin: 0 auto;
     border-radius: 14px;
-    background: #000;
+    background: #1F4D43;
+    object-fit: cover;
   }
   .rand {
     display: block;
@@ -47,16 +55,29 @@
 <a class="rand" href="upload.html" aria-label="Videos verwalten">+</a>
 
 <script>
-  // Liste wird automatisch von GitHub erzeugt (videos.json)
+  const box = document.getElementById('v');
+
+  // Pausieren, sobald ein Video kaum noch sichtbar ist
+  const beobachter = new IntersectionObserver(eintraege => {
+    eintraege.forEach(e => { if (e.intersectionRatio < 0.3 && !e.target.paused) e.target.pause(); });
+  }, { threshold: [0, 0.3] });
+
+  // Liste (Reihenfolge) wird automatisch von GitHub gepflegt: videos.json
   fetch('videos.json', { cache: 'no-store' })
     .then(r => r.json())
     .then(liste => liste.forEach(name => {
+      const id = name.replace('.mp4', '');
       const v = document.createElement('video');
-      v.src = `videos/${name}#t=0.001`;    // #t zeigt auf iOS das erste Bild als Vorschau
+      v.src = `videos/${name}`;
+      v.poster = `posters/${id}.jpg`;   // Vorschaubild – lädt schnell
       v.controls = true;
-      v.playsInline = true;                 // nicht automatisch Vollbild auf iPhone
-      v.preload = 'metadata';               // lädt nur Vorschau, nicht das ganze Video
-      document.getElementById('v').appendChild(v);
+      v.playsInline = true;             // nicht automatisch Vollbild auf iPhone
+      v.preload = 'none';               // Video lädt erst beim Abspielen
+      const bild = new Image();         // Seitenverhältnis schon vor dem Abspielen (aus dem Vorschaubild)
+      bild.onload = () => v.style.aspectRatio = `${bild.naturalWidth} / ${bild.naturalHeight}`;
+      bild.src = v.poster;
+      box.appendChild(v);
+      beobachter.observe(v);
     }));
 
   // Nur ein Video gleichzeitig

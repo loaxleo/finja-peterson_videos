@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#CFF5E7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Finja">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/favicon.png">
 <title>Videos verwalten</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -27,12 +32,15 @@
   #status { white-space: pre-line; margin-top: 12px; }
   #status:empty { display: none; }
   .item { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-  .item video { width: 120px; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; background: #000; flex: none; }
-  .item span { flex: 1; }
+  .item img { width: 96px; height: 64px; object-fit: cover; border-radius: 10px; background: #1F4D43; flex: none; }
+  .item span { flex: 1; font-weight: 600; }
   .item button {
-    border: 0; border-radius: 10px; padding: 10px 14px;
-    background: #fff6; color: #a3261c; font: inherit; font-weight: 600;
+    border: 0; border-radius: 10px; height: 40px; min-width: 40px; padding: 0 10px;
+    background: #fff6; color: #1F4D43; font: inherit; font-weight: 600;
   }
+  .item button:disabled { opacity: .25; }
+  .item .weg { color: #a3261c; }
+  #speichern { margin-bottom: 16px; display: none; }
   .hinweis { opacity: .6; font-size: 15px; }
   #token { background: none; border: 0; color: #1F4D43; font: inherit; font-size: 14px; text-decoration: underline; opacity: .6; margin-top: 32px; }
 </style>
@@ -45,6 +53,7 @@
   <div id="status"></div>
 
   <h2>Auf der Seite</h2>
+  <button class="btn" id="speichern">Reihenfolge speichern</button>
   <div id="liste"><p class="hinweis">Lädt …</p></div>
 
   <button id="token">Token ändern</button>
@@ -81,45 +90,92 @@
     });
   }
 
-  // ---------- Liste + Löschen ----------
+  // ---------- Liste, Reihenfolge, Löschen ----------
+  let reihenfolge = [], dateiInfo = {}, jsonSha = null, wartend = [];
+
   async function laden() {
     const el = $('liste');
+    $('speichern').style.display = 'none';
     try {
-      const [videos, neu] = await Promise.all([api('videos'), api('neu')]);
-      const liste = videos.filter(f => /^\d+\.mp4$/.test(f.name))
-                          .sort((a, b) => parseInt(a.name) - parseInt(b.name));
-      const wartend = neu.filter(f => f.name !== '.gitkeep');
-      el.innerHTML = '';
-      liste.forEach((f, i) => {
-        const d = document.createElement('div');
-        d.className = 'item';
-        d.innerHTML = `<video src="videos/${f.name}#t=0.001" preload="metadata" muted playsinline></video>
-                       <span>Video ${i + 1}</span><button>Löschen</button>`;
-        d.querySelector('button').onclick = () => loeschen(f, d);
-        el.appendChild(d);
-      });
-      wartend.forEach(f => {
-        const d = document.createElement('p');
-        d.className = 'hinweis';
-        d.textContent = `⏳ ${f.name.replace(/^\d+-/, '')} wird verarbeitet …`;
-        el.appendChild(d);
-      });
-      if (!liste.length && !wartend.length) el.innerHTML = '<p class="hinweis">Noch keine Videos.</p>';
+      const [videos, neu, json] = await Promise.all([api('videos'), api('neu'), api('videos.json')]);
+      dateiInfo = {};
+      videos.filter(f => /^\d+\.mp4$/.test(f.name)).forEach(f => dateiInfo[f.name] = f);
+      jsonSha = json.sha || null;
+      const gespeichert = json.content ? JSON.parse(atob(json.content.replace(/\s/g, ''))) : [];
+      const alle = Object.keys(dateiInfo).sort((a, b) => parseInt(a) - parseInt(b));
+      reihenfolge = [...gespeichert.filter(n => dateiInfo[n]), ...alle.filter(n => !gespeichert.includes(n))];
+      wartend = neu.filter(f => f.name !== '.gitkeep');
+      zeichnen();
     } catch (e) {
       el.innerHTML = `<p class="hinweis">Liste konnte nicht geladen werden (${e}).</p>`;
     }
   }
 
-  async function loeschen(f, zeile) {
+  function zeichnen() {
+    const el = $('liste');
+    el.innerHTML = '';
+    reihenfolge.forEach((name, i) => {
+      const d = document.createElement('div');
+      d.className = 'item';
+      d.innerHTML = `<img src="posters/${name.replace('.mp4', '')}.jpg" alt="">
+                     <span>${i + 1}</span>
+                     <button aria-label="nach oben" ${i === 0 ? 'disabled' : ''}>↑</button>
+                     <button aria-label="nach unten" ${i === reihenfolge.length - 1 ? 'disabled' : ''}>↓</button>
+                     <button class="weg">Löschen</button>`;
+      const [hoch, runter, weg] = d.querySelectorAll('button');
+      hoch.onclick = () => schieben(i, -1);
+      runter.onclick = () => schieben(i, 1);
+      weg.onclick = () => loeschen(name, weg);
+      el.appendChild(d);
+    });
+    wartend.forEach(f => {
+      const p = document.createElement('p');
+      p.className = 'hinweis';
+      p.textContent = `⏳ ${f.name.replace(/^\d+-/, '')} wird verarbeitet …`;
+      el.appendChild(p);
+    });
+    if (!reihenfolge.length && !wartend.length) el.innerHTML = '<p class="hinweis">Noch keine Videos.</p>';
+  }
+
+  function schieben(i, richtung) {
+    const j = i + richtung;
+    [reihenfolge[i], reihenfolge[j]] = [reihenfolge[j], reihenfolge[i]];
+    zeichnen();
+    $('speichern').style.display = 'block';
+  }
+
+  $('speichern').onclick = async () => {
+    const btn = $('speichern');
+    btn.disabled = true; btn.textContent = 'Speichert …';
+    try {
+      const r = await api('videos.json', {
+        method: 'PUT',
+        body: JSON.stringify({
+          message: 'Reihenfolge geändert',
+          content: btoa(JSON.stringify(reihenfolge)),
+          sha: jsonSha || undefined,
+          branch: 'main'
+        })
+      });
+      jsonSha = r.content.sha;
+      btn.style.display = 'none';
+      $('status').textContent = 'Reihenfolge gespeichert. Die Videoseite ist in ca. 1–2 Minuten aktualisiert.';
+    } catch (e) {
+      alert(e === 409 ? 'Inzwischen wurde etwas geändert – Seite neu laden und nochmals sortieren.' : 'Speichern fehlgeschlagen: ' + e);
+    }
+    btn.disabled = false; btn.textContent = 'Reihenfolge speichern';
+  };
+
+  async function loeschen(name, btn) {
     if (!confirm('Dieses Video wirklich löschen?')) return;
-    const btn = zeile.querySelector('button');
     btn.disabled = true; btn.textContent = '…';
     try {
-      await api(`videos/${f.name}`, {
+      await api(`videos/${name}`, {
         method: 'DELETE',
-        body: JSON.stringify({ message: 'Video gelöscht: ' + f.name, sha: f.sha, branch: 'main' })
+        body: JSON.stringify({ message: 'Video gelöscht: ' + name, sha: dateiInfo[name].sha, branch: 'main' })
       });
-      zeile.remove();
+      reihenfolge = reihenfolge.filter(n => n !== name);
+      zeichnen();
       $('status').textContent = 'Gelöscht. Die Videoseite ist in ca. 1–2 Minuten aktualisiert.';
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Löschen';
