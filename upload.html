@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#CFF5E7">
+<title>Upload</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #CFF5E7; color: #1F4D43;
+    font: 17px/1.4 -apple-system, system-ui, sans-serif;
+    padding: max(24px, env(safe-area-inset-top)) 20px 24px;
+    display: flex; flex-direction: column; gap: 16px;
+    max-width: 500px; margin: 0 auto;
+  }
+  label, button {
+    display: block; width: 100%; padding: 18px; border: 0; border-radius: 14px;
+    background: #1F4D43; color: #CFF5E7; font: inherit; font-weight: 600; text-align: center;
+  }
+  button:disabled { opacity: .4; }
+  input[type=file] { display: none; }
+  #liste { white-space: pre-line; }
+  #token { background: none; color: #1F4D43; font-weight: 400; font-size: 14px; padding: 8px; text-decoration: underline; }
+</style>
+</head>
+<body>
+  <label>Videos auswählen<input id="datei" type="file" accept="video/*" multiple></label>
+  <button id="los" disabled>Hochladen</button>
+  <div id="liste"></div>
+  <button id="token">Token ändern</button>
+
+<script>
+  const REPO = 'loaxleo/finja-peterson_videos';
+  const $ = id => document.getElementById(id);
+  let dateien = [];
+
+  function token(neu) {
+    let t = !neu && localStorage.getItem('gh_token');
+    if (!t) {
+      t = prompt('GitHub-Token einfügen (wird nur auf diesem Gerät gespeichert):');
+      if (t) localStorage.setItem('gh_token', t.trim());
+    }
+    return t && t.trim();
+  }
+
+  $('token').onclick = () => token(true);
+
+  $('datei').onchange = e => {
+    dateien = [...e.target.files];
+    $('liste').textContent = dateien.map(f => `${f.name}  (${(f.size/1e6).toFixed(0)} MB)`).join('\n');
+    $('los').disabled = !dateien.length;
+  };
+
+  const base64 = f => new Promise((ok, err) => {
+    const r = new FileReader();
+    r.onload = () => ok(r.result.split(',')[1]);
+    r.onerror = err;
+    r.readAsDataURL(f);
+  });
+
+  function hochladen(f, t, zeile) {
+    return base64(f).then(inhalt => new Promise((ok, err) => {
+      const name = Date.now() + '-' + f.name.replace(/[^\w.-]/g, '_');
+      const x = new XMLHttpRequest();
+      x.open('PUT', `https://api.github.com/repos/${REPO}/contents/neu/${name}`);
+      x.setRequestHeader('Authorization', 'Bearer ' + t);
+      x.setRequestHeader('Accept', 'application/vnd.github+json');
+      x.upload.onprogress = e => e.lengthComputable && zeile(Math.round(e.loaded / e.total * 100) + ' %');
+      x.onload = () => x.status < 300 ? ok() : err(x.status);
+      x.onerror = () => err('Netzwerk');
+      x.send(JSON.stringify({ message: 'Neues Video: ' + f.name, content: inhalt, branch: 'main' }));
+    }));
+  }
+
+  $('los').onclick = async () => {
+    const t = token();
+    if (!t) return;
+    $('los').disabled = true;
+    const status = dateien.map(f => f.name);
+    const zeig = () => $('liste').textContent = status.join('\n');
+    for (let i = 0; i < dateien.length; i++) {
+      const f = dateien[i];
+      try {
+        if (f.size > 95e6) throw 'zu gross (max. ~95 MB)';
+        await hochladen(f, t, p => { status[i] = `${f.name}  ${p}`; zeig(); });
+        status[i] = `✓ ${f.name}`;
+      } catch (e) {
+        if (e === 401) localStorage.removeItem('gh_token');
+        status[i] = `✗ ${f.name}  – ${e === 401 ? 'Token ungültig' : e}`;
+      }
+      zeig();
+    }
+    $('liste').textContent += '\n\nIn ca. 2–3 Minuten auf der Seite.';
+  };
+</script>
+</body>
+</html>

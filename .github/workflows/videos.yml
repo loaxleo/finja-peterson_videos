@@ -1,0 +1,69 @@
+name: Videos verarbeiten und Seite veröffentlichen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Neue Videos umwandeln (H.264, faststart)
+        run: |
+          shopt -s nullglob
+          mkdir -p videos
+          neue=()
+          for f in neu/*; do
+            [ -f "$f" ] && [ "$(basename "$f")" != ".gitkeep" ] && neue+=("$f")
+          done
+          if [ ${#neue[@]} -gt 0 ]; then
+            command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+            n=$(ls videos | grep -E '^[0-9]+\.mp4$' | sed 's/\.mp4$//' | sort -n | tail -1)
+            n=${n:-0}
+            for f in "${neue[@]}"; do
+              n=$((n+1))
+              echo "→ $f  =>  videos/$n.mp4"
+              ffmpeg -nostdin -v error -y -i "$f" \
+                -vf "scale='if(gt(iw,ih),-2,min(1080,iw))':'if(gt(iw,ih),min(1080,ih),-2)'" \
+                -c:v libx264 -crf 24 -preset veryfast -pix_fmt yuv420p \
+                -c:a aac -b:a 128k -movflags +faststart "videos/$n.mp4"
+              git rm -q "$f"
+            done
+          fi
+          ls videos | grep -E '^[0-9]+\.mp4$' | sort -n | jq -R . | jq -sc . > videos.json
+          cat videos.json
+
+      - name: Änderungen speichern
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A videos videos.json neu
+          if ! git diff --cached --quiet; then
+            git commit -q -m "Neue Videos verarbeitet"
+            git pull -q --rebase origin main
+            git push -q origin HEAD:main
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deploy
+        uses: actions/deploy-pages@v4

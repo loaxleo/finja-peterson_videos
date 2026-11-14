@@ -31,17 +31,17 @@
 <body>
 
 <script>
-  // Anzahl Videos – Dateien heissen videos/1.mp4, videos/2.mp4, ...
-  const ANZAHL = 8;
-
-  for (let i = 1; i <= ANZAHL; i++) {
-    const v = document.createElement('video');
-    v.src = `videos/${i}.mp4#t=0.001`;   // #t zeigt auf iOS das erste Bild als Vorschau
-    v.controls = true;
-    v.playsInline = true;                 // nicht automatisch Vollbild auf iPhone
-    v.preload = 'metadata';               // lädt nur Vorschau, nicht das ganze Video
-    document.body.appendChild(v);
-  }
+  // Liste wird automatisch von GitHub erzeugt (videos.json)
+  fetch('videos.json', { cache: 'no-store' })
+    .then(r => r.json())
+    .then(liste => liste.forEach(name => {
+      const v = document.createElement('video');
+      v.src = `videos/${name}#t=0.001`;    // #t zeigt auf iOS das erste Bild als Vorschau
+      v.controls = true;
+      v.playsInline = true;                 // nicht automatisch Vollbild auf iPhone
+      v.preload = 'metadata';               // lädt nur Vorschau, nicht das ganze Video
+      document.body.appendChild(v);
+    }));
 
   // Nur ein Video gleichzeitig
   document.addEventListener('play', e => {
