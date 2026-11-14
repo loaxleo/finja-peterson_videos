@@ -11,7 +11,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="icons/favicon.png">
-<title>Finja</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap">
+<title>Finja · Videosammlung</title>
 <style>
   :root {
     --bg: #000;
@@ -22,6 +25,26 @@
   body {
     padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
     -webkit-tap-highlight-color: transparent;
+  }
+  h1, .widmung {
+    font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+    color: var(--mint);
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    padding: 12px 2px 20px;
+  }
+  .widmung {
+    font-size: 19px;
+    font-weight: 500;
+    text-align: center;
+    padding-top: 40px;
+    opacity: .85;
   }
   #v {
     display: flex;
@@ -40,7 +63,7 @@
   .rand {
     display: block;
     width: 44px; height: 44px;
-    margin: 28px auto 0;
+    margin: 20px auto 0;
     border-radius: 50%;
     background: var(--mint);
     color: #1F4D43;
@@ -52,7 +75,9 @@
 </style>
 </head>
 <body>
+<h1>Finja · Videosammlung</h1>
 <main id="v"></main>
+<p class="widmung">Für Finja – zum 18.</p>
 <a class="rand" href="upload.html" aria-label="Videos verwalten">+</a>
 
 <script>
