@@ -5,37 +5,57 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#CFF5E7">
-<title>Upload</title>
+<title>Videos verwalten</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: #CFF5E7; color: #1F4D43;
     font: 17px/1.4 -apple-system, system-ui, sans-serif;
-    padding: max(24px, env(safe-area-inset-top)) 20px 24px;
-    display: flex; flex-direction: column; gap: 16px;
-    max-width: 500px; margin: 0 auto;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    max-width: 600px; margin: 0 auto;
+    -webkit-tap-highlight-color: transparent;
   }
-  label, button {
-    display: block; width: 100%; padding: 18px; border: 0; border-radius: 14px;
+  a.zurueck { display: inline-block; padding: 8px 0 20px; color: #1F4D43; font-weight: 600; text-decoration: none; }
+  .btn {
+    display: block; width: 100%; padding: 16px; border: 0; border-radius: 14px;
     background: #1F4D43; color: #CFF5E7; font: inherit; font-weight: 600; text-align: center;
   }
-  button:disabled { opacity: .4; }
+  .btn:disabled { opacity: .4; }
+  .btn + .btn { margin-top: 10px; }
   input[type=file] { display: none; }
-  #liste { white-space: pre-line; }
-  #token { background: none; color: #1F4D43; font-weight: 400; font-size: 14px; padding: 8px; text-decoration: underline; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .05em; opacity: .6; margin: 32px 0 12px; }
+  #status { white-space: pre-line; margin-top: 12px; }
+  #status:empty { display: none; }
+  .item { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .item video { width: 120px; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; background: #000; flex: none; }
+  .item span { flex: 1; }
+  .item button {
+    border: 0; border-radius: 10px; padding: 10px 14px;
+    background: #fff6; color: #a3261c; font: inherit; font-weight: 600;
+  }
+  .hinweis { opacity: .6; font-size: 15px; }
+  #token { background: none; border: 0; color: #1F4D43; font: inherit; font-size: 14px; text-decoration: underline; opacity: .6; margin-top: 32px; }
 </style>
 </head>
 <body>
-  <label>Videos auswählen<input id="datei" type="file" accept="video/*" multiple></label>
-  <button id="los" disabled>Hochladen</button>
-  <div id="liste"></div>
+  <a class="zurueck" href="./">← Videos</a>
+
+  <label class="btn">Videos auswählen<input id="datei" type="file" accept="video/*" multiple></label>
+  <button class="btn" id="los" disabled>Hochladen</button>
+  <div id="status"></div>
+
+  <h2>Auf der Seite</h2>
+  <div id="liste"><p class="hinweis">Lädt …</p></div>
+
   <button id="token">Token ändern</button>
 
 <script>
   const REPO = 'loaxleo/finja-peterson_videos';
+  const API = `https://api.github.com/repos/${REPO}/contents`;
   const $ = id => document.getElementById(id);
   let dateien = [];
 
+  // ---------- Token ----------
   function token(neu) {
     let t = !neu && localStorage.getItem('gh_token');
     if (!t) {
@@ -44,12 +64,73 @@
     }
     return t && t.trim();
   }
+  $('token').onclick = () => { if (token(true)) laden(); };
 
-  $('token').onclick = () => token(true);
+  function api(pfad, opt = {}) {
+    const t = token();
+    if (!t) return Promise.reject('Kein Token');
+    return fetch(`${API}/${pfad}`, {
+      ...opt,
+      cache: 'no-store',
+      headers: { Authorization: 'Bearer ' + t, Accept: 'application/vnd.github+json' }
+    }).then(r => {
+      if (r.status === 401) { localStorage.removeItem('gh_token'); throw 'Token ungültig'; }
+      if (r.status === 404) return [];
+      if (!r.ok) throw r.status;
+      return r.json();
+    });
+  }
 
+  // ---------- Liste + Löschen ----------
+  async function laden() {
+    const el = $('liste');
+    try {
+      const [videos, neu] = await Promise.all([api('videos'), api('neu')]);
+      const liste = videos.filter(f => /^\d+\.mp4$/.test(f.name))
+                          .sort((a, b) => parseInt(a.name) - parseInt(b.name));
+      const wartend = neu.filter(f => f.name !== '.gitkeep');
+      el.innerHTML = '';
+      liste.forEach((f, i) => {
+        const d = document.createElement('div');
+        d.className = 'item';
+        d.innerHTML = `<video src="videos/${f.name}#t=0.001" preload="metadata" muted playsinline></video>
+                       <span>Video ${i + 1}</span><button>Löschen</button>`;
+        d.querySelector('button').onclick = () => loeschen(f, d);
+        el.appendChild(d);
+      });
+      wartend.forEach(f => {
+        const d = document.createElement('p');
+        d.className = 'hinweis';
+        d.textContent = `⏳ ${f.name.replace(/^\d+-/, '')} wird verarbeitet …`;
+        el.appendChild(d);
+      });
+      if (!liste.length && !wartend.length) el.innerHTML = '<p class="hinweis">Noch keine Videos.</p>';
+    } catch (e) {
+      el.innerHTML = `<p class="hinweis">Liste konnte nicht geladen werden (${e}).</p>`;
+    }
+  }
+
+  async function loeschen(f, zeile) {
+    if (!confirm('Dieses Video wirklich löschen?')) return;
+    const btn = zeile.querySelector('button');
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      await api(`videos/${f.name}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ message: 'Video gelöscht: ' + f.name, sha: f.sha, branch: 'main' })
+      });
+      zeile.remove();
+      $('status').textContent = 'Gelöscht. Die Videoseite ist in ca. 1–2 Minuten aktualisiert.';
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Löschen';
+      alert('Löschen fehlgeschlagen: ' + e);
+    }
+  }
+
+  // ---------- Hochladen ----------
   $('datei').onchange = e => {
     dateien = [...e.target.files];
-    $('liste').textContent = dateien.map(f => `${f.name}  (${(f.size/1e6).toFixed(0)} MB)`).join('\n');
+    $('status').textContent = dateien.map(f => `${f.name}  (${(f.size / 1e6).toFixed(0)} MB)`).join('\n');
     $('los').disabled = !dateien.length;
   };
 
@@ -60,14 +141,14 @@
     r.readAsDataURL(f);
   });
 
-  function hochladen(f, t, zeile) {
+  function hochladen(f, t, fortschritt) {
     return base64(f).then(inhalt => new Promise((ok, err) => {
       const name = Date.now() + '-' + f.name.replace(/[^\w.-]/g, '_');
       const x = new XMLHttpRequest();
-      x.open('PUT', `https://api.github.com/repos/${REPO}/contents/neu/${name}`);
+      x.open('PUT', `${API}/neu/${name}`);
       x.setRequestHeader('Authorization', 'Bearer ' + t);
       x.setRequestHeader('Accept', 'application/vnd.github+json');
-      x.upload.onprogress = e => e.lengthComputable && zeile(Math.round(e.loaded / e.total * 100) + ' %');
+      x.upload.onprogress = e => e.lengthComputable && fortschritt(Math.round(e.loaded / e.total * 100) + ' %');
       x.onload = () => x.status < 300 ? ok() : err(x.status);
       x.onerror = () => err('Netzwerk');
       x.send(JSON.stringify({ message: 'Neues Video: ' + f.name, content: inhalt, branch: 'main' }));
@@ -79,7 +160,7 @@
     if (!t) return;
     $('los').disabled = true;
     const status = dateien.map(f => f.name);
-    const zeig = () => $('liste').textContent = status.join('\n');
+    const zeig = () => $('status').textContent = status.join('\n');
     for (let i = 0; i < dateien.length; i++) {
       const f = dateien[i];
       try {
@@ -92,8 +173,12 @@
       }
       zeig();
     }
-    $('liste').textContent += '\n\nIn ca. 2–3 Minuten auf der Seite.';
+    $('status').textContent += '\n\nIn ca. 2–3 Minuten auf der Videoseite.';
+    $('datei').value = ''; dateien = [];
+    laden();
   };
+
+  laden();
 </script>
 </body>
 </html>
